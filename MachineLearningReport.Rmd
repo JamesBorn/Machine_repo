@@ -1,0 +1,163 @@
+---
+title: "Practical Machine Learning: Prediction Model Assignment Write-up"
+author: "pierre attey"
+date: "Saturday, January 24, 2015"
+---
+
+``Subject background``
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here:
+http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+``Data``
+
+The training and the test data for this project are available respectively here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv; coming from this source: http://groupware.les.inf.puc-rio.br/har
+
+``THE GOAL``
+
+The goal of this  project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases
+
+``Data collection and management``
+
+In this data, classe variable  takes on four possible values: A,B,C,D,E exactly according to the specication (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway   (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specied execution of the exercise, while the other 4 classes correspond to common mistakes
+
+``Data processing``
+
+  - load libraries and Set the pseudo-random seed to a known value to try and make the
+random forest run repeatable
+
+```{r}
+set.seed(12345)
+library(hexbin)
+library(randomForest)
+library(caret)
+library(ggplot2)
+library(corrplot)
+library(devtools)
+```
+``check if a data folder exists; if not then create one``
+```{r}
+if (!file.exists("data")) {dir.create("data")}
+```
+
+``file URL and destination file``
+
+```{r}
+fileUrl1 <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+destfile1 <- "./data/pml-training.csv"
+fileUrl2 <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+destfile2 <- "./data/pml-testing.csv"
+```
+
+``download the file and note the time``
+```{r}
+download.file(fileUrl1, destfile = destfile1)
+download.file(fileUrl2, destfile = destfile2)
+dateDownloaded <- date()
+```
+
+``read the original training and testing data set``
+
+ 
+```{r}
+Original_training<- read.csv("./data/pml-training.csv", header = TRUE)
+Original_test <- read.csv("./data/pml-testing.csv", header = TRUE)
+```
+  ``Cleaning data``
+ We observe that, this original training data sets have several common issues: missing values, invalid values like #DIV/0!, blank column. 
+ - Firstly we have to replace all off these with and NA value with the R command line 
+ 
+```{r}
+setwd("C:/Users/ryUser/Practical_Machine")
+Original_training<- read.csv("pml-training.csv", header = TRUE,na.strings = c("NA", "","#DIV/0!"))
+Original_test <- read.csv("pml-testing.csv",header = TRUE,na.strings = c("NA","","#DIV/0!"))
+```
+
+ - Secondly  now we have certains variables are missing for about all values of data.
+we do not know Why? but We are interested in variables that predict the movement.
+
+ ``The set contains a number of variables that can be removed``
+ 
+ - Searching for missing values columns and Treating missing values
+ 
+```{r}
+Original_training.NAS <- apply(Original_training, 2, function(x) {sum(is.na(x))})
+Original_training.clean <- Original_training[,which(Original_training.NAS== 0)]
+Original_test.NAS <- apply(Original_test, 2, function(x) {sum(is.na(x))})
+Original_test.clean <- Original_test[,which(Original_test.NAS == 0)]
+```
+ 
+
+ - Remove variable whicth are not predict movement like X (= row number) and 
+user_name (= the name of the subject) 
+
+```{r}
+final_training_clean <- Original_training.clean[8:length(Original_training.clean)]
+final_test_clean <- Original_test.clean[8:length(Original_test.clean)]
+```
+  ``Build a Model``
+
+ - split the cleaned testing data into training and cross validation
+ 
+ 
+```{r}
+inTrain = createDataPartition(y = final_training_clean$classe, p = 0.6, list = FALSE)
+Index_train = final_training_clean[inTrain, ]
+validation = final_training_clean[-inTrain, ]
+```
+
+
+ - plot a Bar charts show the distribution of categorical variable classe 
+```{r} 
+ggplot(Index_train) +geom_histogram(aes(x=classe),binwidth=5, fill="Blue")
+``` 
+
+ - plot a correlation matrix
+ The correlation plot lay in evidensce a significant correlation between the variables.
+ 
+```{r fig.width=9, fig.height=9}
+correlMatrix <- cor(Index_train[, -length(Index_train)])
+corrplot(correlMatrix, order = "FPC", method = "circle", type = "lower", tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+
+ -  fit a model to predict the classe using everything else as a predictor
+ I use the function randomForest in  package randomForest because it can reduce training variance and sensitivity to overfitting
+```{r}
+model <- randomForest(classe ~ ., data = Index_train, importance=TRUE)
+```
+
+  - Examining variable importance
+  
+```{r}
+varImp <- importance(model)
+```
+
+ - Plot the variable importance as measured by accuracy change
+ 
+```{r fig.width=9, fig.height=9}
+varImpPlot(model, type=1)
+```
+
+ - crossvalidation of the model using the remaining 40% of data. We use also 
+   the confusion matrix for measuring classifier performance.
+   Prediction accuaracy is  99.45% mean that this model proved very
+   robust and adequete to predict new data
+ 
+```{r}
+predict_CrossVal <- predict(model, validation)
+confusionMatrix(validation$classe, predict_CrossVal)
+```
+
+ - predict the classes of the test set
+ 
+ 
+```{r}
+predictTest <- predict(model, final_test_clean )
+predictTest
+```
+
+
+
+
